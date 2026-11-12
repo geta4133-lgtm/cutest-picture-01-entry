@@ -9,10 +9,11 @@ import os
 from pathlib import Path
 from PIL import Image
 
-
 DEFAULT_OUTPUT_DIR = "/output"
 ENTRY_FILENAME = "entry.png"
 EXPECTED_SIZE = (1024, 1024)
+MAX_FILE_SIZE = 1 * 1024 * 1024  # 1 MiB limit
+PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 
 
 def get_output_dir() -> Path:
@@ -22,19 +23,32 @@ def get_output_dir() -> Path:
     return out_dir
 
 
-def verify_image(path: Path) -> None:
-    """Verify the bundled entry image exists and has the expected dimensions."""
+def verify_image(path: Path) -> bytes:
+    """Verify the bundled entry image exists, satisfies size bounds, has PNG header, and expected dimensions."""
     if not path.is_file():
         raise FileNotFoundError(f"Missing bundled entry image: {path}")
+
+    data = path.read_bytes()
+    if len(data) > MAX_FILE_SIZE:
+        raise ValueError(
+            f"Image file size {len(data)} bytes exceeds maximum allowed limit of {MAX_FILE_SIZE} bytes (1 MiB)"
+        )
+
+    if not data.startswith(PNG_MAGIC):
+        raise ValueError(f"File {path} does not have a valid PNG signature header.")
+
     with Image.open(path) as img:
+        if img.format != "PNG":
+            raise ValueError(f"Unexpected image format {img.format}, expected PNG")
         if img.size != EXPECTED_SIZE:
             raise ValueError(f"Unexpected image size {img.size}, expected {EXPECTED_SIZE}")
+
+    return data
 
 
 def export_entry(src: Path, dst: Path) -> str:
     """Verify and deterministically write the entry image bytes from src to dst."""
-    verify_image(src)
-    data = src.read_bytes()
+    data = verify_image(src)
     dst.write_bytes(data)
     return hashlib.sha256(data).hexdigest()
 

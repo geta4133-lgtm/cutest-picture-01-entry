@@ -7,7 +7,7 @@ to the configured output directory (/output/entry.png by default).
 import hashlib
 import os
 from pathlib import Path
-from PIL import Image
+import struct
 
 DEFAULT_OUTPUT_DIR = "/output"
 ENTRY_FILENAME = "entry.png"
@@ -37,11 +37,15 @@ def verify_image(path: Path) -> bytes:
     if not data.startswith(PNG_MAGIC):
         raise ValueError(f"File {path} does not have a valid PNG signature header.")
 
-    with Image.open(path) as img:
-        if img.format != "PNG":
-            raise ValueError(f"Unexpected image format {img.format}, expected PNG")
-        if img.size != EXPECTED_SIZE:
-            raise ValueError(f"Unexpected image size {img.size}, expected {EXPECTED_SIZE}")
+    if len(data) < 24:
+        raise ValueError(f"File {path} is too small to contain valid PNG header and IHDR chunk.")
+
+    if data[12:16] != b"IHDR":
+        raise ValueError(f"File {path} first chunk is not IHDR.")
+
+    width, height = struct.unpack(">II", data[16:24])
+    if (width, height) != EXPECTED_SIZE:
+        raise ValueError(f"Unexpected image size {(width, height)}, expected {EXPECTED_SIZE}")
 
     return data
 
